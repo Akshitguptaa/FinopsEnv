@@ -21,7 +21,8 @@ USE_GROQ       = os.environ.get("USE_GROQ", "0").lower() in ("1", "true")
 USE_GEMINI     = os.environ.get("USE_GEMINI", "0").lower() in ("1", "true")
 USE_OLLAMA     = os.environ.get("USE_OLLAMA", "0").lower() in ("1", "true")
 
-API_BASE_URL   = os.environ.get("API_BASE_URL", "http://localhost:7860").rstrip("/")
+ENV_SERVER_URL = os.environ.get("ENV_SERVER_URL", "http://localhost:7860").rstrip("/")
+API_BASE_URL   = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1").rstrip("/")
 MAX_EPISODE_SECONDS = 360
 
 if USE_GROQ:
@@ -53,12 +54,15 @@ elif USE_OLLAMA:
         base_url="http://127.0.0.1:11434/v1"
     )
 else:
-    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-    MODEL_NAME     = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-    if not OPENAI_API_KEY:
-        print("ERROR: OPENAI_API_KEY is not set.", file=sys.stderr)
+    API_KEY = os.environ.get("HF_TOKEN") or os.environ.get("API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+    MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
+    if not API_KEY:
+        print("ERROR: API_KEY/HF_TOKEN is not set.", file=sys.stderr)
         sys.exit(1)
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    client = OpenAI(
+        api_key=API_KEY,
+        base_url=API_BASE_URL
+    )
 
 ACTION_SCHEMA = {
     "type": "object",
@@ -96,7 +100,7 @@ SCHEMA:
 
 def reset_env(task_id: int, seed: int = 42) -> Dict:
     r = requests.post(
-        f"{API_BASE_URL}/reset",
+        f"{ENV_SERVER_URL}/reset",
         json={"seed": seed, "task_id": task_id, "session_id": "inference"},
     )
     r.raise_for_status()
@@ -105,7 +109,7 @@ def reset_env(task_id: int, seed: int = 42) -> Dict:
 
 def step_env(action: Dict) -> Dict:
     r = requests.post(
-        f"{API_BASE_URL}/step",
+        f"{ENV_SERVER_URL}/step",
         json={"action": action, "session_id": "inference"},
     )
     r.raise_for_status()
@@ -113,7 +117,7 @@ def step_env(action: Dict) -> Dict:
 
 
 def get_grade() -> float:
-    r = requests.get(f"{API_BASE_URL}/grade", params={"session_id": "inference"})
+    r = requests.get(f"{ENV_SERVER_URL}/grade", params={"session_id": "inference"})
     r.raise_for_status()
     return r.json()["score"]
 
@@ -204,7 +208,7 @@ def log_step(step: int, action: dict, reward: float, done: bool, error: str = No
 def log_end(success: bool, steps: int, score: float, rewards: list):
     success_str = "true" if success else "false"
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={success_str} steps={steps} score={score:.4f} rewards={rewards_str}", flush=True)
+    print(f"[END] success={success_str} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
 
 def run_task(task_id: int, seed: int = 42) -> float:
@@ -250,9 +254,9 @@ def run_task(task_id: int, seed: int = 42) -> float:
 
 def main():
     try:
-        requests.get(f"{API_BASE_URL}/health", timeout=10).raise_for_status()
+        requests.get(f"{ENV_SERVER_URL}/health", timeout=10).raise_for_status()
     except Exception as e:
-        print(f"ERROR: Cannot reach server at {API_BASE_URL}: {e}", file=sys.stderr)
+        print(f"ERROR: Cannot reach server at {ENV_SERVER_URL}: {e}", file=sys.stderr)
         sys.exit(1)
 
     scores = {}
