@@ -1,0 +1,134 @@
+# openenv.yaml — OpenEnv environment manifest
+# Validated by: openenv validate
+# Deployed by:  openenv push
+
+name: finops-env
+version: "1.0.0"
+description: >
+  Cloud FinOps & Carbon-Aware Workload Orchestration Environment.
+  Trains autonomous SRE agents to minimise multi-cloud infrastructure cost
+  and carbon footprint while maintaining strict Service Level Agreements.
+
+authors:
+  - name: "FinOpsEnv Team"
+    email: "finopsenv@example.com"
+
+# Hugging Face Space configuration
+space:
+  sdk: docker
+  port: 7860
+  hardware: cpu-basic
+
+# Environment metadata
+environment:
+  type: real-world
+  domain: cloud-infrastructure
+  tags:
+    - finops
+    - kubernetes
+    - carbon-aware
+    - multi-cloud
+    - rl-environment
+    - enterprise
+
+# Protocol compliance
+protocol:
+  version: "1.0"
+  endpoints:
+    reset:
+      method: POST
+      path: /reset
+      description: "Initialise a new episode. Returns initial FinOpsObservation."
+    step:
+      method: POST
+      path: /step
+      description: "Execute one action. Returns (observation, reward, done, info)."
+    state:
+      method: GET
+      path: /state
+      description: "Returns full internal FinOpsState for grading and validation."
+    grade:
+      method: GET
+      path: /grade
+      description: "Returns normalised score [0.0, 1.0] for completed episode."
+    health:
+      method: GET
+      path: /health
+      description: "Liveness probe. Returns {status: ok}."
+  websocket:
+    path: /ws
+    description: "Persistent stateful session. Supports: reset, step, state, grade, ping."
+
+# Action space schema reference
+action_space:
+  type: discrete-parametric
+  model: FinOpsAction
+  actions:
+    - name: provision_node
+      params: [region, instance_tier, billing_model]
+    - name: terminate_node
+      params: [node_id]
+    - name: migrate_traffic
+      params: [source_region, target_region, percentage]
+    - name: noop
+      params: []
+
+# Observation space summary
+observation_space:
+  model: FinOpsObservation
+  fields:
+    - sim_step
+    - sim_hour
+    - global_rps
+    - regional_metrics
+    - spot_prices
+    - carbon_intensity
+    - routing_weights
+    - budget_consumed_usd
+    - active_nodes
+
+# Task definitions
+tasks:
+  - id: 1
+    name: "Static Workload Rightsizing"
+    difficulty: easy
+    max_steps: 50
+    grader: deterministic
+    description: >
+      Reduce over-provisioned cluster to optimal size for static 1000 RPS
+      without triggering any SLA violations (no dropped requests).
+
+  - id: 2
+    name: "Dynamic Spot-Market Orchestration"
+    difficulty: medium
+    max_steps: 288
+    grader: deterministic
+    description: >
+      Manage a 24-hour diurnal traffic cycle with bursty spikes and spot
+      price volatility. Beat the naive autoscaler heuristic in total cost
+      while maintaining 99.9% uptime.
+
+  - id: 3
+    name: "Carbon-Aware Multi-Region Failover"
+    difficulty: hard
+    max_steps: 288
+    grader: deterministic
+    description: >
+      Optimise for cost, carbon footprint, and latency simultaneously across
+      three geographic regions with dynamic carbon intensity grids.
+      Pareto-optimal solutions required.
+
+# Baseline inference script
+baseline:
+  script: inference.py
+  env_vars:
+    - OPENAI_API_KEY
+    - API_BASE_URL
+    - MODEL_NAME
+  runtime_limit_seconds: 1200
+  requires_all_tasks: true
+
+# Docker build
+build:
+  dockerfile: Dockerfile
+  context: .
