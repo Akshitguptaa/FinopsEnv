@@ -1,3 +1,13 @@
 from .env import FinOpsEnv
+from .client import FinOpsEnvClient
 from .schemas.action import FinOpsAction
-__all__ = ["FinOpsEnv", "FinOpsAction"]
+from .schemas.observation import FinOpsObservation, FinOpsState, RegionMetrics
+
+__all__ = [
+    "FinOpsEnv",
+    "FinOpsEnvClient",
+    "FinOpsAction",
+    "FinOpsObservation",
+    "FinOpsState",
+    "RegionMetrics",
+]

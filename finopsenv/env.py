@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import numpy as np
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
+
+from openenv.core.env_server import Environment
 
 from .simulation import (
     TrafficGenerator, PricingEngine, CarbonGrid, ClusterSimulator,
@@ -13,8 +15,11 @@ from .graders import GRADERS, RewardShaper
 from .simulation.constants import MINUTES_PER_STEP
 
 
-class FinOpsEnv:
+class FinOpsEnv(Environment[FinOpsAction, FinOpsObservation, FinOpsState]):
+    SUPPORTS_CONCURRENT_SESSIONS = True
+
     def __init__(self) -> None:
+        super().__init__()
         self._ready   = False
         self._task_id = 1
         self._seed    = 42
@@ -38,14 +43,25 @@ class FinOpsEnv:
         self._heuristic_cost_reference   = 0.0
         self._initial_cost_reference     = 0.0
 
-    def reset(self, seed: int = 42, task_id: int = 1) -> FinOpsObservation:
+        # Store last step's reward/info for the observation
+        self._last_reward: Optional[float] = None
+        self._last_info: Dict[str, Any] = {}
+
+    def reset(
+        self,
+        seed: Optional[int] = None,
+        episode_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> FinOpsObservation:
         # Resets to the initial state for the requested task.
         # re-initialise all background engines  
         # managing their random seeds 
-        
+        actual_seed = seed if seed is not None else 42
+        task_id = int(kwargs.get("task_id", 1))
+
         assert task_id in (1, 2, 3), f"task_id must be 1, 2, or 3, got {task_id}"
 
-        self._seed       = seed
+        self._seed       = actual_seed
         self._task_id    = task_id
         self._task_cfg   = TASK_CONFIGS[task_id]
         self._sim_step   = 0
@@ -56,18 +72,20 @@ class FinOpsEnv:
         self._total_rps_dropped  = 0
         self._last_provision     = False
         self._last_terminate     = False
+        self._last_reward        = None
+        self._last_info          = {}
 
         cfg       = self._task_cfg
         max_steps = cfg["max_steps"]
 
-        self._rng     = np.random.default_rng(seed)
-        self._pricing = PricingEngine(rng=np.random.default_rng(seed + 1), enable_spot=cfg["enable_spot"])
-        self._carbon  = CarbonGrid(rng=np.random.default_rng(seed + 2),    enable_carbon=cfg["enable_carbon"])
-        self._traffic = TrafficGenerator(rng=np.random.default_rng(seed + 3), base_rps=cfg["base_rps"], mode=cfg["traffic_mode"])
+        self._rng     = np.random.default_rng(actual_seed)
+        self._pricing = PricingEngine(rng=np.random.default_rng(actual_seed + 1), enable_spot=cfg["enable_spot"])
+        self._carbon  = CarbonGrid(rng=np.random.default_rng(actual_seed + 2),    enable_carbon=cfg["enable_carbon"])
+        self._traffic = TrafficGenerator(rng=np.random.default_rng(actual_seed + 3), base_rps=cfg["base_rps"], mode=cfg["traffic_mode"])
         self._traffic.seed_bursts(max_steps)
 
         self._cluster = ClusterSimulator(
-            rng=np.random.default_rng(seed + 4),
+            rng=np.random.default_rng(actual_seed + 4),
             pricing_engine=self._pricing,
             initial_nodes=dict(cfg["initial_nodes"]),
             failure_enabled=(task_id >= 2),
@@ -87,7 +105,12 @@ class FinOpsEnv:
         self._ready = True
         return self._build_observation()
 
-    def step(self, action: FinOpsAction) -> Tuple[FinOpsObservation, float, bool, Dict]:
+    def step(
+        self,
+        action: FinOpsAction,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
+    ) -> FinOpsObservation:
         # Submits an action to the environment 
         # the cluster simulation to tick forward to accrue costs, handle RPS, and 
 
@@ -172,8 +195,15 @@ class FinOpsEnv:
             "tick":               tick,
         })
 
-        return self._build_observation(), reward, self._done, info
+        self._last_reward = reward
+        self._last_info   = info
 
+        obs = self._build_observation()
+        obs.done   = self._done
+        obs.reward = reward
+        return obs
+
+    @property
     def state(self) -> FinOpsState:
         # internal state 
 
@@ -182,6 +212,7 @@ class FinOpsEnv:
         cfg = self._task_cfg
         return FinOpsState(
             sim_step=self._sim_step,
+            step_count=self._sim_step,
             task_id=self._task_id,
             seed=self._seed,
             max_steps=cfg["max_steps"],
@@ -204,7 +235,7 @@ class FinOpsEnv:
     def grade(self) -> float:
         # 0.0 to 1.0
 
-        s = self.state()
+        s = self.state
         grader_input = {
             "total_cost_usd":           s.total_cost_usd,
             "total_carbon_kg":          s.total_carbon_kg,

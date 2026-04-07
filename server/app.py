@@ -1,15 +1,26 @@
+"""FinOpsEnv FastAPI server.
+
+Architecture:
+  - OpenEnv's HTTPEnvServer provides the standard /ws WebSocket endpoint
+    and protocol-compliant /health, /schema, /metadata, /docs endpoints.
+  - Custom stateful HTTP routes (/reset, /step, /state, /grade) maintain
+    per-session environment state for the inference script.
+  - Both access methods share the same FinOpsEnv implementation.
+"""
+
 from __future__ import annotations
 
-import json
-import uuid
-from typing import Any, Dict
+from typing import Dict
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
-from finopsenv import FinOpsEnv, FinOpsAction
-from finopsenv.simulation.constants import TASK_CONFIGS
+from openenv.core.env_server import HTTPEnvServer
+
+from finopsenv.env import FinOpsEnv
+from finopsenv.schemas.action import FinOpsAction
+from finopsenv.schemas.observation import FinOpsObservation
 
 app = FastAPI(
     title="FinOpsEnv",
@@ -23,6 +34,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_env_server = HTTPEnvServer(
+    FinOpsEnv,
+    action_cls=FinOpsAction,
+    observation_cls=FinOpsObservation,
+    max_concurrent_envs=100,
+)
+_env_server.register_routes(app, mode="production")
 
 _sessions: Dict[str, FinOpsEnv] = {}
 _DEFAULT_SESSION = "default"
@@ -45,12 +64,7 @@ class StepRequest(BaseModel):
     session_id: str = _DEFAULT_SESSION
 
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": "FinOpsEnv"}
-
-
-@app.post("/reset")
+@app.post("/reset", tags=["FinOps Session"])
 async def reset(req: ResetRequest):
     # new episode for the id and task.
 
@@ -59,34 +73,33 @@ async def reset(req: ResetRequest):
     return {"observation": obs.model_dump(), "session_id": req.session_id}
 
 
-@app.post("/step")
+@app.post("/step", tags=["FinOps Session"])
 async def step(req: StepRequest):
     # action - provision, terminate, migrate, or noop 
     # Returns the next state observation, dense reward
 
     env = _get_or_create(req.session_id)
     try:
-        obs, reward, done, info = env.step(req.action)
+        obs = env.step(req.action)
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {
         "observation": obs.model_dump(),
-        "reward": reward,
-        "done": done,
-        "info": info,
+        "reward": obs.reward,
+        "done": obs.done,
     }
 
 
-@app.get("/state")
+@app.get("/state", tags=["FinOps Session"])
 async def state_endpoint(session_id: str = _DEFAULT_SESSION):
     env = _get_or_create(session_id)
     try:
-        return env.state().model_dump()
+        return env.state.model_dump()
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/grade")
+@app.get("/grade", tags=["FinOps Session"])
 async def grade_endpoint(session_id: str = _DEFAULT_SESSION):
     env = _get_or_create(session_id)
     try:
@@ -95,93 +108,10 @@ async def grade_endpoint(session_id: str = _DEFAULT_SESSION):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/tasks")
+@app.get("/tasks", tags=["FinOps"])
 async def list_tasks():
+    from finopsenv.simulation.constants import TASK_CONFIGS
     return {"tasks": TASK_CONFIGS}
-
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    # commands: ['ping', 'reset', 'step', 'state', 'grade'].
-
-    await websocket.accept()
-    session_id = str(uuid.uuid4())
-    env = FinOpsEnv()
-    _sessions[session_id] = env
-
-    await websocket.send_json({"type": "connected", "session_id": session_id})
-
-    try:
-        while True:
-            raw = await websocket.receive_text()
-            try:
-                msg = json.loads(raw)
-            except json.JSONDecodeError:
-                await websocket.send_json({"type": "error", "message": "Invalid JSON"})
-                continue
-
-            cmd = msg.get("command", "")
-
-            if cmd == "ping":
-                await websocket.send_json({"type": "pong"})
-
-            elif cmd == "reset":
-                obs = env.reset(
-                    seed=int(msg.get("seed", 42)),
-                    task_id=int(msg.get("task_id", 1)),
-                )
-                await websocket.send_json({"type": "observation", "data": obs.model_dump()})
-
-            elif cmd == "step":
-                try:
-                    action = FinOpsAction(**msg.get("action", {}))
-                except (ValidationError, TypeError) as e:
-                    await websocket.send_json({"type": "error", "message": f"Invalid action: {e}"})
-                    continue
-                try:
-                    obs, reward, done, info = env.step(action)
-                except RuntimeError as e:
-                    await websocket.send_json({"type": "error", "message": str(e)})
-                    continue
-
-                safe_info = {
-                    k: v for k, v in info.items()
-                    if isinstance(v, (str, int, float, bool, type(None), dict, list))
-                }
-                await websocket.send_json({
-                    "type":        "step_result",
-                    "observation": obs.model_dump(),
-                    "reward":      reward,
-                    "done":        done,
-                    "info":        safe_info,
-                })
-
-            elif cmd == "state":
-                try:
-                    await websocket.send_json({"type": "state", "data": env.state().model_dump()})
-                except RuntimeError as e:
-                    await websocket.send_json({"type": "error", "message": str(e)})
-
-            elif cmd == "grade":
-                try:
-                    await websocket.send_json({"type": "grade", "score": env.grade()})
-                except RuntimeError as e:
-                    await websocket.send_json({"type": "error", "message": str(e)})
-
-            else:
-                await websocket.send_json({
-                    "type":    "error",
-                    "message": f"Unknown command '{cmd}'. Valid: reset, step, state, grade, ping.",
-                })
-
-    except WebSocketDisconnect:
-        _sessions.pop(session_id, None)
-    except Exception as e:
-        try:
-            await websocket.send_json({"type": "error", "message": str(e)})
-        except Exception:
-            pass
-        _sessions.pop(session_id, None)
 
 
 def main():

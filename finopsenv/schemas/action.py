@@ -1,9 +1,10 @@
 from __future__ import annotations
 from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, Field
+from openenv.core.env_server import Action
 
 
-class FinOpsAction(BaseModel):
+class FinOpsAction(Action):
     action_type: Literal["provision_node", "terminate_node", "migrate_traffic", "noop"] = Field(
         description="Which action to execute this step."
     )

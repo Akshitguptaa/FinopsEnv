@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from openenv.core.env_server import Observation, State
 
 
 class RegionMetrics(BaseModel):
@@ -12,7 +13,9 @@ class RegionMetrics(BaseModel):
     avg_latency_ms:  float = 0.0
 
 
-class FinOpsObservation(BaseModel):
+class FinOpsObservation(Observation):
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
     sim_step:            int                      = 0
     sim_hour:            int                      = 0
     sim_minute:          int                      = 0
@@ -29,7 +32,9 @@ class FinOpsObservation(BaseModel):
     steps_remaining:     int                      = 0
 
 
-class FinOpsState(BaseModel):
+class FinOpsState(State):
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
     task_id:            int
     seed:               int
     sim_step:           int
