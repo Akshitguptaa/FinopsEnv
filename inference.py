@@ -17,19 +17,19 @@ if os.path.exists(".env"):
                 k, v = line.split("=", 1)
                 os.environ.setdefault(k.strip(), v.strip().strip("'\""))
 
-ENV_SERVER_URL = os.environ.get("ENV_SERVER_URL", "http://localhost:7860").rstrip("/")
+ENV_SERVER_URL = os.getenv("ENV_SERVER_URL", "http://localhost:7860").rstrip("/")
 MAX_EPISODE_SECONDS = 360
 
-API_BASE_URL = os.environ.get("API_BASE_URL") or "https://router.huggingface.co/v1"
-MODEL_NAME = os.environ.get("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
-API_KEY = os.environ.get("HF_TOKEN") or os.environ.get("API_KEY")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+HF_TOKEN = os.getenv("HF_TOKEN")
 
-if not API_KEY:
-    print("ERROR: API_KEY/HF_TOKEN is not set.", file=sys.stderr)
+if not HF_TOKEN:
+    print("ERROR: HF_TOKEN is not set.", file=sys.stderr)
     sys.exit(1)
 
 client = OpenAI(
-    api_key=API_KEY,
+    api_key=HF_TOKEN,
     base_url=API_BASE_URL
 )
 
