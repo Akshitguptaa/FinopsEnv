@@ -9,33 +9,33 @@ class FinOpsAction(Action):
         description="Which action to execute this step."
     )
 
-    region: Optional[str] = Field(
+    region: str | None = Field(
         default=None,
         description="Target region for provisioning (e.g. 'us-east-1').",
     )
-    instance_tier: Optional[str] = Field(
+    instance_tier: str | None = Field(
         default="standard",
         description="Node tier: 'standard', 'high-memory', or 'compute'.",
     )
-    billing_model: Optional[Literal["on-demand", "spot"]] = Field(
+    billing_model: Literal["on-demand", "spot"] | None = Field(
         default="on-demand",
         description="Billing model for the new node.",
     )
 
-    node_id: Optional[str] = Field(
+    node_id: str | None = Field(
         default=None,
         description="8-char node ID to terminate.",
     )
 
-    source_region: Optional[str] = Field(
+    source_region: str | None = Field(
         default=None,
         description="Region to shift traffic from.",
     )
-    target_region: Optional[str] = Field(
+    target_region: str | None = Field(
         default=None,
         description="Region to shift traffic to.",
     )
-    percentage: Optional[float] = Field(
+    percentage: float | None = Field(
         default=0.10,
         ge=0.0,
         le=1.0,

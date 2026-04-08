@@ -10,7 +10,7 @@ Architecture:
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -65,8 +65,10 @@ class StepRequest(BaseModel):
 
 
 @app.post("/reset", tags=["FinOps Session"])
-async def reset(req: ResetRequest):
+async def reset(req: Optional[ResetRequest] = None):
     # new episode for the id and task.
+    if req is None:
+        req = ResetRequest()
 
     env = _get_or_create(req.session_id)
     obs = env.reset(seed=req.seed, task_id=req.task_id)

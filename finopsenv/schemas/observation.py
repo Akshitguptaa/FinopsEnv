@@ -40,7 +40,7 @@ class FinOpsState(State):
     sim_step:           int
     max_steps:          int
     done:               bool
-    termination_reason: Optional[str]
+    termination_reason: str | None
 
     total_cost_usd:   float
     total_carbon_kg:  float
@@ -52,7 +52,7 @@ class FinOpsState(State):
     terminate_events: int
 
     budget_total_usd: float
-    max_carbon_kg:    Optional[float]
+    max_carbon_kg:    float | None
 
     nodes:           List[Dict[str, Any]] = Field(default_factory=list)
     routing_weights: Dict[str, float]     = Field(default_factory=dict)
