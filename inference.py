@@ -22,7 +22,7 @@ MAX_EPISODE_SECONDS = 360
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN = os.getenv("HF_TOKEN")
+HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
 if not HF_TOKEN:
     print("ERROR: HF_TOKEN is not set.", file=sys.stderr)
@@ -32,6 +32,8 @@ client = OpenAI(
     api_key=HF_TOKEN,
     base_url=API_BASE_URL
 )
+
+SUCCESS_SCORE_THRESHOLD = 0.1  
 
 ACTION_SCHEMA = {
     "type": "object",
@@ -222,7 +224,7 @@ def call_llm(obs_text: str, conversation: list) -> Dict:
             conversation.append({"role": "assistant", "content": cleaned})
             
             parsed = json.loads(cleaned)
-            print(f"  [LLM Response] {cleaned[:150]}", file=sys.stderr)
+            # print(f"  [LLM Response] {cleaned[:150]}", file=sys.stderr)
             return parsed
         except json.JSONDecodeError as e:
             print(f"  [LLM] JSON parse failed: {e} | raw={repr(raw[:100] if raw else 'None')}", file=sys.stderr)
@@ -330,7 +332,7 @@ def run_task(task_id: int, seed: int = 42) -> float:
                 break
 
         score = get_grade()
-        success = True # or logic based on your scoring
+        success = score >= SUCCESS_SCORE_THRESHOLD
 
     finally:
         score_val = score if 'score' in locals() else 0.0
