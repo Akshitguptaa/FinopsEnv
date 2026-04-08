@@ -57,18 +57,20 @@ Your goal is to minimize cost while keeping SLAs. You are REWARDED for terminati
 
 CAPACITY MATH (use the CAPACITY CHECK line in each observation):
 - Each "standard" node handles ~250 RPS, "compute" ~400 RPS, "high-memory" ~200 RPS.
-- BEFORE terminating, verify: remaining_capacity > current_RPS * 1.3 (30% safety margin).
+- BEFORE terminating, verify: remaining_capacity > current_RPS * 1.5 (50% safety margin).
 - NEVER terminate if only 2 or fewer nodes remain in a region with traffic.
 
 OPTIMIZATION STRATEGY (follow this every step):
-- If headroom > 50%: You are OVER-PROVISIONED. You MUST output action_type "terminate_node" and include region, instance_tier, billing_model, and node_id.
-- If headroom 30-50%: Cluster is right-sized. Use "noop".
-- If headroom < 30%: Cluster is tight. Consider "provision_node" if CPU > 75%.
-- Once you reach a stable reward (same reward 2+ times in a row), STOP optimizing and use "noop".
+- If headroom > 70%: You are OVER-PROVISIONED. You MUST output action_type "terminate_node". Prioritize terminating "on-demand" nodes!
+- If headroom < 40%: Cluster is tight. MUST output action_type "provision_node".
+- If headroom 40-70%: Cluster is safe, so optimize CARBON and COST:
+  * Check CARBON INTENSITY. If one region is 30+ gCO2/kWh greener, output "migrate_traffic" to shift 0.10 (10%) from dirtiest to greenest region.
+  * If carbon is equal, but spot prices vary greatly, use "migrate_traffic" to shift to the cheapest region.
+  * Only output "noop" if capacity is safe AND carbon/costs are balanced.
 - Dropped requests are CATASTROPHIC (quadratic penalty). Never risk drops.
 
 AVAILABLE ACTIONS:
-1. provision_node  — Boot a new node. Include region, instance_tier, and billing_model (use "spot" if price < 0.5).
+1. provision_node  — Boot a new node. Include region, instance_tier, and billing_model (always prefer "spot" billing_model to reduce costs!).
 2. terminate_node  — Remove a node. MUST include region, instance_tier, billing_model, and node_id.
 3. migrate_traffic — Shift traffic % between regions for cost/carbon optimization.
 4. noop            — Use when cluster is right-sized or stable.
@@ -283,7 +285,7 @@ def _is_safe_to_terminate(obs: Dict, action: Dict) -> bool:
     region_rps = obs.get("global_rps", 0) * rw
 
     # Block if remaining capacity < 1.3x demand
-    return remaining_cap >= region_rps * 1.3
+    return remaining_cap >= region_rps * 1.5
 
 
 def run_task(task_id: int, seed: int = 42) -> float:
