@@ -8,6 +8,12 @@ from ..simulation.constants import (
     TASK_CONFIGS,
 )
 
+SCORE_FLOOR = 0.001
+SCORE_CEIL  = 0.999
+
+def _clamp_score(s: float) -> float:
+    return max(SCORE_FLOOR, min(SCORE_CEIL, s))
+
 class RewardShaper:
     # real time RL rewards for each step 
     # this class generates a continuous signal (efficiency vs. SLA vs. carbon) to help agents learn.
@@ -59,9 +65,9 @@ def grade_task1(state: dict) -> float:
     # to handle the static load. Any dropped requests instantly fail the run (score 0).
 
     if state["dropped_requests"] > 0:
-        return 0.0
+        return SCORE_FLOOR
     if state["terminate_events"] == 0:
-        return 0.0
+        return SCORE_FLOOR
 
     # Minimum viable fleet: ceil(1000 RPS / 250 per node / 0.85 target CPU) = 5 nodes
     optimal_nodes = 5
@@ -74,10 +80,10 @@ def grade_task1(state: dict) -> float:
     if agent_cost >= worst_cost:
         return 0.1
     if agent_cost <= optimal_total:
-        return 1.0
+        return SCORE_CEIL
 
     raw = (worst_cost - agent_cost) / (worst_cost - optimal_total)
-    return round(float(min(1.0, max(0.1, raw))), 4)
+    return _clamp_score(round(float(min(1.0, max(0.1, raw))), 4))
 
 
 def grade_task2(state: dict) -> float:
@@ -87,20 +93,20 @@ def grade_task2(state: dict) -> float:
 
     total_rps = state.get("total_rps_served", 0) + state.get("total_rps_dropped", 0)
     if total_rps == 0:
-        return 0.0
+        return SCORE_FLOOR
 
     drop_fraction = state["total_rps_dropped"] / max(total_rps, 1)
     if drop_fraction > 0.001:
-        return 0.0
+        return SCORE_FLOOR
 
     heuristic_cost = state.get("heuristic_cost_reference", 1.0)
     agent_cost = state["total_cost_usd"]
 
     if agent_cost >= heuristic_cost:
-        return 0.0
+        return SCORE_FLOOR
 
     raw = (heuristic_cost - agent_cost) / heuristic_cost
-    return round(float(min(1.0, max(0.0, raw))), 4)
+    return _clamp_score(round(float(raw), 4))
 
 
 def grade_task3(state: dict) -> float:
@@ -110,16 +116,16 @@ def grade_task3(state: dict) -> float:
     # minimizing total carbon emissions beneath the cap.
 
     if state["total_cost_usd"] > state["budget_total_usd"]:
-        return 0.0
+        return SCORE_FLOOR
 
     max_carbon = state.get("max_carbon_kg", 50.0)
     if state["total_carbon_kg"] > max_carbon:
-        return 0.0
+        return SCORE_FLOOR
 
     total_rps = state.get("total_rps_served", 0) + state.get("total_rps_dropped", 0)
     drop_fraction = state["total_rps_dropped"] / max(total_rps, 1)
     if drop_fraction > 0.001:
-        return 0.0
+        return SCORE_FLOOR
 
     s_cost   = float(max(0.0, min(1.0, 1.0 - state["total_cost_usd"] / state["budget_total_usd"])))
     s_carbon = float(max(0.0, min(1.0, 1.0 - state["total_carbon_kg"] / max_carbon)))
@@ -131,7 +137,7 @@ def grade_task3(state: dict) -> float:
     eps     = 1e-9
     hm = sum(weights) / sum(w / max(s, eps) for w, s in zip(weights, subs))
 
-    return round(float(min(1.0, max(0.0, hm))), 4)
+    return _clamp_score(round(float(hm), 4))
 
 
 GRADERS = {1: grade_task1, 2: grade_task2, 3: grade_task3}
